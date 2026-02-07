@@ -132,8 +132,8 @@
   let bossBreak = bossBase.maxBreak;
   let breakDownUntil = 0; // timestamp (ms) when break ends
   const BREAK_DURATION = 3500; // ms
-  let playerHp = 100;
-  const playerMaxHp = 100;
+  let playerHp = 250;
+  const playerMaxHp = 250;
 
   // Cooldowns (ms)
   const cd = { atk: 0, s1: 0, s2: 0, global: 0 };
@@ -373,16 +373,20 @@
   }
 
   function endFight(win) {
-    running = false;
-    auto = false;
-    $("autoBtn").textContent = "AUTO: OFF";
+  running = false;
+  auto = false;
+  $("autoBtn").textContent = "AUTO: OFF";
 
-    if (win) {
-      lastDrop = makeDrop();
-      setBest(elapsed);
-      renderBest();
-    }
+  if (win) {
+    lastDrop = makeDrop();
+    $("drop").textContent = "WIN! ドロップ獲得\n\n" + fmtItem(lastDrop);
+    setBest(elapsed);
+    renderBest();
+  } else {
+    $("drop").textContent =
+      "LOSE…\n\n・装備がまだ弱い時はAUTOでOK\n・慣れたらブレイク中にスキルを合わせると速い\n\n→「再戦」を押してね";
   }
+}
 
   // ========= Loop =========
   function tick() {
