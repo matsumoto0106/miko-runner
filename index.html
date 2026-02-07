@@ -398,6 +398,11 @@
 
       bossTick(now());
 
+      // ブレイクが終わったらゲージを全回復
+      if (!isBroken(now()) && bossBreak === 0) {
+        bossBreak = bossBase.maxBreak;
+      }
+
       if (bossHp <= 0) endFight(true);
       if (playerHp <= 0) endFight(false);
     }
