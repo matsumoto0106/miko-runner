@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>殲儀 ±1 (50%) シミュレータ</title>
+  <title>殲儀 30到達回数シミュレータ（±1 50%）</title>
   <style>
     body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif; margin:0; padding:12px; }
     .wrap { max-width: 720px; margin: 0 auto; display:grid; gap:10px; }
@@ -14,14 +14,13 @@
     button:disabled { opacity:.5; }
     .big { font-size:44px; font-weight:800; line-height:1; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .tiny { font-size:12px; opacity:.8; }
+    .tiny { font-size:12px; opacity:.85; }
     .bar { height:14px; background:#eee; border-radius:999px; overflow:hidden; }
     .fill { height:100%; width:0%; background:#333; transition: width .08s linear; }
-    input[type="number"] { width: 110px; padding:10px; border-radius:10px; border:1px solid #ccc; font-size:16px; }
+    input[type="number"] { width: 120px; padding:10px; border-radius:10px; border:1px solid #ccc; font-size:16px; }
     textarea { width:100%; min-height:120px; resize:vertical; padding:10px; border-radius:12px; border:1px solid #ccc; font-size:14px; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:right; }
-    th:first-child, td:first-child { text-align:left; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #ddd; }
+    .ok { font-weight:700; }
   </style>
 </head>
 <body>
@@ -30,18 +29,19 @@
   <div class="card">
     <div class="row">
       <div>
-        <div class="tiny">現在値</div>
+        <div class="tiny">現在の殲儀</div>
         <div class="big mono" id="val">0</div>
       </div>
-      <div style="min-width: 220px;">
+      <div style="min-width: 240px;">
         <div class="row" style="justify-content:flex-start; gap:10px;">
-          <div class="mono">範囲: <span id="minTxt">0</span>〜<span id="maxTxt">30</span></div>
+          <div class="mono badge">範囲: <span id="minTxt">0</span>〜<span id="maxTxt">30</span></div>
+          <div class="mono badge">今回の回数: <span id="tries">0</span></div>
         </div>
         <div class="bar" style="margin-top:8px;">
           <div class="fill" id="bar"></div>
         </div>
-        <div class="tiny" style="margin-top:6px;">
-          1回ごとに 50%で +1 / 50%で -1（範囲外は丸め）
+        <div class="tiny" style="margin-top:6px;" id="hint">
+          50%で +1 / 50%で -1（範囲外は丸め）
         </div>
       </div>
     </div>
@@ -55,36 +55,28 @@
 
     <div class="row" style="margin-top:10px;">
       <div class="mono">開始値</div>
-      <input id="startInput" type="number" min="0" max="30" value="0" />
-      <button id="setBtn">設定</button>
-      <button id="resetBtn">リセット</button>
+      <input id="startInput" type="number" min="0" max="30" value="1" />
+      <button id="startBtn">チャレンジ開始</button>
+      <button id="retryBtn">再挑戦</button>
     </div>
     <div class="tiny">
-      ※下限0は仮ルール。もし下限が違う/マイナスOK/30で止まる等があれば、そこだけすぐ調整できる。
+      仕様：<span class="ok">殲儀が1以上のときだけガチャ可能</span>（0のときは回せない）
     </div>
   </div>
 
   <div class="card">
     <div class="row">
-      <div class="mono">統計</div>
-      <div class="mono">回数: <span id="n">0</span> / +1: <span id="plus">0</span> / -1: <span id="minus">0</span></div>
+      <div class="mono">30到達履歴</div>
+      <div class="mono">回数: <span id="histN">0</span> / 平均: <span id="avg">—</span> / 最小: <span id="min">—</span></div>
     </div>
-    <div style="margin-top:10px; overflow:auto;">
-      <table>
-        <thead>
-          <tr><th>値</th><th>回数</th><th>割合</th></tr>
-        </thead>
-        <tbody id="dist"></tbody>
-      </table>
+    <div class="tiny" style="margin-top:6px;">
+      「30に到達した瞬間」の“今回の回数”を保存します（履歴は端末内に保存）
     </div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <div class="mono">履歴（最新が上）</div>
-      <button id="clearLogBtn">履歴クリア</button>
+    <textarea id="history" readonly></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="clearHistoryBtn">履歴クリア</button>
+      <div class="tiny mono" id="savedNote"></div>
     </div>
-    <textarea id="log" readonly></textarea>
   </div>
 
 </div>
@@ -92,107 +84,179 @@
 <script>
 (() => {
   // ---- Config ----
-  const MIN = 0;      // 仮：下限
-  const MAX = 30;     // 上限30
+  const MIN = 0;
+  const MAX = 30;
+  const KEY = "sen-gi-sim_v1";
 
   // ---- State ----
   let value = 0;
-  let total = 0;
-  let plus = 0;
-  let minus = 0;
+  let startValue = 1;
+  let tries = 0;         // 今回、30に到達するまでに回した回数
   let auto = false;
   let autoTimer = null;
+  let finished = false;  // 30到達済み（今回のチャレンジは終了）
 
-  // 分布
-  const dist = new Array(MAX - MIN + 1).fill(0);
+  let history = [];      // {tries:number, at:string, start:number}
 
   // ---- DOM ----
   const $ = (id) => document.getElementById(id);
   $("minTxt").textContent = MIN;
   $("maxTxt").textContent = MAX;
 
-  function clamp(v) { return Math.max(MIN, Math.min(MAX, v)); }
+  const clamp = (v) => Math.max(MIN, Math.min(MAX, v));
+  const canRoll = () => (!finished && value >= 1);
 
-  function logLine(s) {
-    const area = $("log");
-    area.value = s + "\n" + area.value;
+  function load() {
+    try {
+      const obj = JSON.parse(localStorage.getItem(KEY) || "{}");
+      history = Array.isArray(obj.history) ? obj.history : [];
+    } catch {
+      history = [];
+    }
+  }
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify({ history }));
+    $("savedNote").textContent = "保存済み";
+    setTimeout(() => $("savedNote").textContent = "", 800);
+  }
+
+  function fmtTime() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   function render() {
     $("val").textContent = value;
+    $("tries").textContent = tries;
 
     const pct = ((value - MIN) / (MAX - MIN)) * 100;
     $("bar").style.width = `${pct}%`;
 
-    $("n").textContent = total;
-    $("plus").textContent = plus;
-    $("minus").textContent = minus;
-
-    // dist table
-    const tbody = $("dist");
-    tbody.innerHTML = "";
-    const denom = total || 1;
-    for (let v = MIN; v <= MAX; v++) {
-      const c = dist[v - MIN];
-      const tr = document.createElement("tr");
-      const p = (c / denom) * 100;
-      tr.innerHTML = `<td class="mono">${v}</td><td class="mono">${c}</td><td class="mono">${p.toFixed(1)}%</td>`;
-      tbody.appendChild(tr);
-    }
+    // ボタン活性
+    $("rollBtn").disabled = !canRoll();
+    $("roll10Btn").disabled = !canRoll();
+    $("roll100Btn").disabled = !canRoll();
+    $("autoBtn").disabled = finished; // 終了後はAUTO不可
 
     $("autoBtn").textContent = `AUTO: ${auto ? "ON" : "OFF"}`;
+
+    // ヒント表示
+    if (finished) {
+      $("hint").textContent = "30到達！履歴に保存済み。再挑戦してね。";
+    } else if (value < 1) {
+      $("hint").textContent = "殲儀が1未満のためガチャ不可。開始値を1以上にして開始/再挑戦してね。";
+    } else {
+      $("hint").textContent = "50%で +1 / 50%で -1（範囲外は丸め）";
+    }
+
+    renderHistory();
+  }
+
+  function renderHistory() {
+    $("histN").textContent = history.length;
+
+    if (history.length === 0) {
+      $("history").value = "（履歴なし）";
+      $("avg").textContent = "—";
+      $("min").textContent = "—";
+      return;
+    }
+
+    const triesArr = history.map(h => h.tries);
+    const sum = triesArr.reduce((a,b)=>a+b,0);
+    const avg = sum / triesArr.length;
+    const min = Math.min(...triesArr);
+
+    $("avg").textContent = avg.toFixed(1);
+    $("min").textContent = String(min);
+
+    // 新しい順に表示
+    const lines = [...history].reverse().map((h, idx) => {
+      const no = history.length - idx;
+      return `${String(no).padStart(3," ")}) tries=${h.tries}  start=${h.start}  at=${h.at}`;
+    });
+    $("history").value = lines.join("\n");
+  }
+
+  function stopAuto() {
+    auto = false;
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = null;
+  }
+
+  function finishIf30() {
+    if (value !== MAX) return;
+
+    finished = true;
+    stopAuto();
+
+    history.push({ tries, at: fmtTime(), start: startValue });
+    save();
   }
 
   function rollOnce() {
+    if (!canRoll()) return;
+
     // 50/50
     const up = Math.random() < 0.5;
     const before = value;
     value = clamp(value + (up ? 1 : -1));
+    tries++;
 
-    total++;
-    if (up) plus++; else minus++;
-    dist[value - MIN]++;
-
-    const sign = up ? "+1" : "-1";
-    const note = (value === before) ? "（端で丸め）" : "";
-    logLine(`${total.toString().padStart(5," ")}: ${before} → ${value}  ${sign} ${note}`.trim());
+    // 30到達チェック
+    finishIf30();
   }
 
   function rollMany(n) {
-    for (let i = 0; i < n; i++) rollOnce();
+    for (let i = 0; i < n; i++) {
+      if (!canRoll()) break;
+      rollOnce();
+    }
     render();
   }
 
-  function setValue(v) {
-    value = clamp(v);
+  function beginChallenge() {
+    startValue = clamp(Number($("startInput").value));
+    value = startValue;
+    tries = 0;
+    finished = (value === MAX); // 開始時点で30なら終了扱い
+    stopAuto();
+    if (finished) {
+      // いちおう履歴に残す（開始=30は0回で到達）
+      history.push({ tries: 0, at: fmtTime(), start: startValue });
+      save();
+    }
     render();
   }
 
-  function resetAll() {
-    value = 0;
-    total = plus = minus = 0;
-    dist.fill(0);
-    $("log").value = "";
+  function retry() {
+    // 今の開始値でやり直し
+    value = startValue;
+    tries = 0;
+    finished = (value === MAX);
+    stopAuto();
+    if (finished) {
+      history.push({ tries: 0, at: fmtTime(), start: startValue });
+      save();
+    }
     render();
-  }
-
-  function setStart() {
-    const v = Number($("startInput").value);
-    setValue(v);
-    logLine(`--- 開始値を ${value} に設定 ---`);
   }
 
   function toggleAuto() {
+    if (finished) return;
     auto = !auto;
     if (auto) {
-      autoTimer = setInterval(() => {
-        // AUTOは重すぎない速度で
-        rollMany(1);
-      }, 120);
+      autoTimer = setInterval(() => rollMany(1), 60);
     } else {
-      clearInterval(autoTimer);
-      autoTimer = null;
+      stopAuto();
     }
+    render();
+  }
+
+  function clearHistory() {
+    history = [];
+    save();
     render();
   }
 
@@ -202,12 +266,13 @@
   $("roll100Btn").addEventListener("click", () => rollMany(100));
   $("autoBtn").addEventListener("click", toggleAuto);
 
-  $("setBtn").addEventListener("click", setStart);
-  $("resetBtn").addEventListener("click", resetAll);
-  $("clearLogBtn").addEventListener("click", () => { $("log").value = ""; });
+  $("startBtn").addEventListener("click", beginChallenge);
+  $("retryBtn").addEventListener("click", retry);
+  $("clearHistoryBtn").addEventListener("click", clearHistory);
 
-  // init
-  render();
+  // ---- Init ----
+  load();
+  beginChallenge(); // デフォ開始値で即スタート
 })();
 </script>
 </body>
