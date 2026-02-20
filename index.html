@@ -21,6 +21,7 @@
     textarea { width:100%; min-height:120px; resize:vertical; padding:10px; border-radius:12px; border:1px solid #ccc; font-size:14px; }
     .badge { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #ddd; }
     .ok { font-weight:700; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
   </style>
 </head>
 <body>
@@ -72,7 +73,12 @@
   <div class="card">
     <div class="row">
       <div class="mono">30到達履歴</div>
-      <div class="mono">回数: <span id="histN">0</span> / 平均(ガチャ): <span id="avg">—</span> / 最小(ガチャ): <span id="min">—</span></div>
+      <div class="mono">
+        回数: <span id="histN">0</span>
+        / 平均(ガチャ): <span id="avg">—</span>
+        / 最小(ガチャ): <span id="min">—</span>
+        / 最大(ガチャ): <span id="maxTry">—</span>
+      </div>
     </div>
     <div class="tiny" style="margin-top:6px;">
       「30に到達した瞬間」の“ガチャ回数”を保存します（履歴は端末内に保存）
@@ -84,6 +90,23 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="row">
+      <div class="mono">履歴共有</div>
+      <div class="tiny">コピーして別端末に貼り付け→インポートできます</div>
+    </div>
+
+    <div class="grid2" style="margin-top:8px;">
+      <button id="exportBtn">共有データを生成</button>
+      <button id="copyBtn">共有データをコピー</button>
+      <button id="shareBtn">共有（対応端末）</button>
+      <button id="importBtn">この欄からインポート</button>
+    </div>
+
+    <textarea id="shareData" placeholder="ここに共有データが出ます / 受け取った共有データを貼ってインポートもできます"></textarea>
+    <div class="tiny" id="shareMsg"></div>
+  </div>
+
 </div>
 
 <script>
@@ -91,7 +114,7 @@
   // ---- Config ----
   const MIN = 0;
   const MAX = 30;
-  const KEY = "sen-gi-sim_v3";
+  const KEY = "sen-gi-sim_v4";
 
   // ---- State ----
   let value = 0;
@@ -105,7 +128,7 @@
   let autoTimer = null;
   let finished = false;    // 30到達済み
 
-  // 保存する履歴：ガチャ回数/復帰回数/開始値 (+表示に使わないが互換のためzeroAt,atも保持)
+  // 履歴：表示は3項目のみ（ガチャ/復帰/開始値）
   let history = [];        // {tries:number, recover:number, start:number, zeroAt:number|null, at:string}
 
   // ---- DOM ----
@@ -116,7 +139,6 @@
   const clamp = (v) => Math.max(MIN, Math.min(MAX, v));
 
   function canRoll() {
-    // 殲儀が1以上じゃないとガチャ不可
     return !finished && value >= 1;
   }
 
@@ -147,7 +169,45 @@
     autoTimer = null;
   }
 
-  // ★ 履歴表示は「ガチャ回数/復帰回数/開始値」だけにする
+  // ---- Share helpers ----
+  function setShareMsg(s) {
+    $("shareMsg").textContent = s;
+    if (s) setTimeout(() => { if ($("shareMsg").textContent === s) $("shareMsg").textContent = ""; }, 2500);
+  }
+
+  function exportDataString() {
+    // 表示上必要な3項目だけを共有（軽くしておく）
+    const payload = {
+      v: 1,
+      history: history.map(h => ({ tries: h.tries, recover: h.recover, start: h.start }))
+    };
+    const json = JSON.stringify(payload);
+    const b64 = btoa(unescape(encodeURIComponent(json))); // utf8-safe
+    return `SENGI:${b64}`;
+  }
+
+  function importDataString(s) {
+    const t = (s || "").trim();
+    if (!t.startsWith("SENGI:")) throw new Error("形式が違います（SENGI: で始まる文字列を貼ってください）");
+    const b64 = t.slice("SENGI:".length);
+    const json = decodeURIComponent(escape(atob(b64)));
+    const obj = JSON.parse(json);
+
+    if (!obj || !Array.isArray(obj.history)) throw new Error("データが壊れています");
+    // 既存形式に合わせて取り込み（at/zeroAtは省略可）
+    const imported = obj.history.map(x => ({
+      tries: Number(x.tries) || 0,
+      recover: Number(x.recover) || 0,
+      start: Number(x.start) || 0,
+      zeroAt: null,
+      at: fmtTime()
+    }));
+
+    history = imported;
+    save();
+  }
+
+  // ---- UI ----
   function renderHistory() {
     $("histN").textContent = history.length;
 
@@ -155,6 +215,7 @@
       $("history").value = "（履歴なし）";
       $("avg").textContent = "—";
       $("min").textContent = "—";
+      $("maxTry").textContent = "—";
       return;
     }
 
@@ -162,9 +223,11 @@
     const sum = triesArr.reduce((a,b)=>a+b,0);
     const avg = sum / triesArr.length;
     const min = Math.min(...triesArr);
+    const maxTry = Math.max(...triesArr);
 
     $("avg").textContent = avg.toFixed(1);
     $("min").textContent = String(min);
+    $("maxTry").textContent = String(maxTry);
 
     const lines = [...history].reverse().map((h, idx) => {
       const no = history.length - idx;
@@ -220,18 +283,15 @@
   function rollOnce() {
     if (!canRoll()) return;
 
-    // 50/50
     const up = Math.random() < 0.5;
     value = clamp(value + (up ? 1 : -1));
     tries++;
 
-    // 0到達の記録（初回だけ）
     if (value === 0 && zeroAt === null) {
       zeroAt = tries;
     }
 
-    // ---- 自力復帰ルール ----
-    // 「開始値を1下回った瞬間」に開始値へ戻す（回数カウント）
+    // 自力復帰：開始値を1下回った瞬間に開始値へ戻す
     if (value === startValue - 1) {
       value = startValue;
       recoverN++;
@@ -260,7 +320,6 @@
     finished = (value === MAX);
     stopAuto();
 
-    // 開始値が30なら「0回で到達」として履歴に残す
     if (finished) {
       history.push({ tries: 0, recover: 0, start: startValue, zeroAt: null, at: fmtTime() });
       save();
@@ -304,6 +363,33 @@
     render();
   }
 
+  // ---- Share actions ----
+  async function doCopy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareMsg("コピーしました");
+    } catch {
+      // clipboardが使えない端末向け：選択しやすいようにする
+      $("shareData").focus();
+      $("shareData").select();
+      setShareMsg("この欄を長押し→コピーしてください");
+    }
+  }
+
+  async function doShare(text) {
+    // 対応端末のみ
+    if (!navigator.share) {
+      setShareMsg("この端末は共有に未対応です（コピーを使ってください）");
+      return;
+    }
+    try {
+      await navigator.share({ text });
+      setShareMsg("共有しました");
+    } catch {
+      setShareMsg("共有をキャンセルしました");
+    }
+  }
+
   // ---- Events ----
   $("rollBtn").addEventListener("click", () => rollMany(1));
   $("roll10Btn").addEventListener("click", () => rollMany(10));
@@ -313,6 +399,34 @@
   $("startBtn").addEventListener("click", beginChallenge);
   $("retryBtn").addEventListener("click", retry);
   $("clearHistoryBtn").addEventListener("click", clearHistory);
+
+  $("exportBtn").addEventListener("click", () => {
+    const s = exportDataString();
+    $("shareData").value = s;
+    setShareMsg("共有データを生成しました");
+  });
+
+  $("copyBtn").addEventListener("click", async () => {
+    const s = $("shareData").value.trim() || exportDataString();
+    $("shareData").value = s;
+    await doCopy(s);
+  });
+
+  $("shareBtn").addEventListener("click", async () => {
+    const s = $("shareData").value.trim() || exportDataString();
+    $("shareData").value = s;
+    await doShare(s);
+  });
+
+  $("importBtn").addEventListener("click", () => {
+    try {
+      importDataString($("shareData").value);
+      setShareMsg("インポートしました（既存履歴は上書き）");
+      render();
+    } catch (e) {
+      setShareMsg(String(e.message || e));
+    }
+  });
 
   // ---- Init ----
   load();
