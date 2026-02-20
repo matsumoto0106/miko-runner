@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>殲儀 30到達回数シミュレータ（±1 50%）</title>
+  <title>殲儀 30到達回数シミュレータ（±1 50% + 自力復帰）</title>
   <style>
     body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif; margin:0; padding:12px; }
     .wrap { max-width: 720px; margin: 0 auto; display:grid; gap:10px; }
@@ -32,10 +32,12 @@
         <div class="tiny">現在の殲儀</div>
         <div class="big mono" id="val">0</div>
       </div>
-      <div style="min-width: 240px;">
+      <div style="min-width: 260px;">
         <div class="row" style="justify-content:flex-start; gap:10px;">
           <div class="mono badge">範囲: <span id="minTxt">0</span>〜<span id="maxTxt">30</span></div>
-          <div class="mono badge">今回の回数: <span id="tries">0</span></div>
+          <div class="mono badge">今回: <span id="tries">0</span>回</div>
+          <div class="mono badge">復帰: <span id="recoverN">0</span>回</div>
+          <div class="mono badge">0到達: <span id="zeroAt">—</span></div>
         </div>
         <div class="bar" style="margin-top:8px;">
           <div class="fill" id="bar"></div>
@@ -59,8 +61,11 @@
       <button id="startBtn">チャレンジ開始</button>
       <button id="retryBtn">再挑戦</button>
     </div>
-    <div class="tiny">
-      仕様：<span class="ok">殲儀が1以上のときだけガチャ可能</span>（0のときは回せない）
+
+    <div class="tiny" style="margin-top:8px;">
+      仕様：
+      <span class="ok">殲儀が1以上のときだけガチャ可能</span> ／
+      <span class="ok">開始値を1下回った瞬間に自力復帰して開始値へ戻る（復帰回数をカウント）</span>
     </div>
   </div>
 
@@ -86,17 +91,21 @@
   // ---- Config ----
   const MIN = 0;
   const MAX = 30;
-  const KEY = "sen-gi-sim_v1";
+  const KEY = "sen-gi-sim_v2";
 
   // ---- State ----
   let value = 0;
   let startValue = 1;
-  let tries = 0;         // 今回、30に到達するまでに回した回数
+
+  let tries = 0;           // 今回、30に到達するまでに回した回数
+  let recoverN = 0;        // 自力復帰した回数（開始値へ戻した回数）
+  let zeroAt = null;       // 初めて0に到達した回数（開始値=1のとき等で起こり得る）
+
   let auto = false;
   let autoTimer = null;
-  let finished = false;  // 30到達済み（今回のチャレンジは終了）
+  let finished = false;    // 30到達済み
 
-  let history = [];      // {tries:number, at:string, start:number}
+  let history = [];        // {tries:number, at:string, start:number, recover:number, zeroAt:number|null}
 
   // ---- DOM ----
   const $ = (id) => document.getElementById(id);
@@ -104,7 +113,17 @@
   $("maxTxt").textContent = MAX;
 
   const clamp = (v) => Math.max(MIN, Math.min(MAX, v));
-  const canRoll = () => (!finished && value >= 1);
+
+  function canRoll() {
+    // 殲儀が1以上じゃないとガチャ不可
+    return !finished && value >= 1;
+  }
+
+  function fmtTime() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
 
   function load() {
     try {
@@ -114,43 +133,17 @@
       history = [];
     }
   }
+
   function save() {
     localStorage.setItem(KEY, JSON.stringify({ history }));
     $("savedNote").textContent = "保存済み";
     setTimeout(() => $("savedNote").textContent = "", 800);
   }
 
-  function fmtTime() {
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-
-  function render() {
-    $("val").textContent = value;
-    $("tries").textContent = tries;
-
-    const pct = ((value - MIN) / (MAX - MIN)) * 100;
-    $("bar").style.width = `${pct}%`;
-
-    // ボタン活性
-    $("rollBtn").disabled = !canRoll();
-    $("roll10Btn").disabled = !canRoll();
-    $("roll100Btn").disabled = !canRoll();
-    $("autoBtn").disabled = finished; // 終了後はAUTO不可
-
-    $("autoBtn").textContent = `AUTO: ${auto ? "ON" : "OFF"}`;
-
-    // ヒント表示
-    if (finished) {
-      $("hint").textContent = "30到達！履歴に保存済み。再挑戦してね。";
-    } else if (value < 1) {
-      $("hint").textContent = "殲儀が1未満のためガチャ不可。開始値を1以上にして開始/再挑戦してね。";
-    } else {
-      $("hint").textContent = "50%で +1 / 50%で -1（範囲外は丸め）";
-    }
-
-    renderHistory();
+  function stopAuto() {
+    auto = false;
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = null;
   }
 
   function renderHistory() {
@@ -171,18 +164,40 @@
     $("avg").textContent = avg.toFixed(1);
     $("min").textContent = String(min);
 
-    // 新しい順に表示
     const lines = [...history].reverse().map((h, idx) => {
       const no = history.length - idx;
-      return `${String(no).padStart(3," ")}) tries=${h.tries}  start=${h.start}  at=${h.at}`;
+      const z = (h.zeroAt == null) ? "-" : h.zeroAt;
+      return `${String(no).padStart(3," ")}) tries=${h.tries}  start=${h.start}  recover=${h.recover}  zeroAt=${z}  at=${h.at}`;
     });
     $("history").value = lines.join("\n");
   }
 
-  function stopAuto() {
-    auto = false;
-    if (autoTimer) clearInterval(autoTimer);
-    autoTimer = null;
+  function render() {
+    $("val").textContent = value;
+    $("tries").textContent = tries;
+    $("recoverN").textContent = recoverN;
+    $("zeroAt").textContent = (zeroAt === null) ? "—" : `${zeroAt}回目`;
+
+    const pct = ((value - MIN) / (MAX - MIN)) * 100;
+    $("bar").style.width = `${pct}%`;
+
+    $("rollBtn").disabled = !canRoll();
+    $("roll10Btn").disabled = !canRoll();
+    $("roll100Btn").disabled = !canRoll();
+    $("autoBtn").disabled = finished;
+
+    $("autoBtn").textContent = `AUTO: ${auto ? "ON" : "OFF"}`;
+
+    if (finished) {
+      $("hint").textContent = "30到達！履歴に保存済み。再挑戦してね。";
+    } else if (value < 1) {
+      // value==0 など。開始値=1なら「0→復帰」するが、開始値=0等もあり得るので一応ガード。
+      $("hint").textContent = "殲儀が0のためガチャ不可 →「チャレンジ開始」か「再挑戦」で開始値を1以上にしてね。";
+    } else {
+      $("hint").textContent = "50%で +1 / 50%で -1（範囲外は丸め）";
+    }
+
+    renderHistory();
   }
 
   function finishIf30() {
@@ -191,7 +206,13 @@
     finished = true;
     stopAuto();
 
-    history.push({ tries, at: fmtTime(), start: startValue });
+    history.push({
+      tries,
+      at: fmtTime(),
+      start: startValue,
+      recover: recoverN,
+      zeroAt
+    });
     save();
   }
 
@@ -200,9 +221,21 @@
 
     // 50/50
     const up = Math.random() < 0.5;
-    const before = value;
     value = clamp(value + (up ? 1 : -1));
     tries++;
+
+    // 0到達の記録（初回だけ）
+    if (value === 0 && zeroAt === null) {
+      zeroAt = tries;
+    }
+
+    // ---- 自力復帰ルール ----
+    // 「開始値を1下回った瞬間」に開始値へ戻す（回数カウント）
+    // 例：開始値10 → 9になった瞬間に10へ復帰
+    if (value === startValue - 1) {
+      value = startValue;
+      recoverN++;
+    }
 
     // 30到達チェック
     finishIf30();
@@ -212,6 +245,7 @@
     for (let i = 0; i < n; i++) {
       if (!canRoll()) break;
       rollOnce();
+      if (finished) break;
     }
     render();
   }
@@ -219,27 +253,38 @@
   function beginChallenge() {
     startValue = clamp(Number($("startInput").value));
     value = startValue;
+
     tries = 0;
-    finished = (value === MAX); // 開始時点で30なら終了扱い
+    recoverN = 0;
+    zeroAt = null;
+
+    finished = (value === MAX);
     stopAuto();
+
+    // 開始値が30なら「0回で到達」として履歴に残す
     if (finished) {
-      // いちおう履歴に残す（開始=30は0回で到達）
-      history.push({ tries: 0, at: fmtTime(), start: startValue });
+      history.push({ tries: 0, at: fmtTime(), start: startValue, recover: 0, zeroAt: null });
       save();
     }
+
     render();
   }
 
   function retry() {
-    // 今の開始値でやり直し
     value = startValue;
+
     tries = 0;
+    recoverN = 0;
+    zeroAt = null;
+
     finished = (value === MAX);
     stopAuto();
+
     if (finished) {
-      history.push({ tries: 0, at: fmtTime(), start: startValue });
+      history.push({ tries: 0, at: fmtTime(), start: startValue, recover: 0, zeroAt: null });
       save();
     }
+
     render();
   }
 
@@ -272,7 +317,7 @@
 
   // ---- Init ----
   load();
-  beginChallenge(); // デフォ開始値で即スタート
+  beginChallenge(); // デフォ開始値で開始
 })();
 </script>
 </body>
