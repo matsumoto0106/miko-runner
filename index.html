@@ -3,440 +3,211 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Boss Runner Prototype</title>
+  <title>殲儀 ±1 (50%) シミュレータ</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; padding: 12px; }
-    .wrap { max-width: 680px; margin: 0 auto; display: grid; gap: 10px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 10px; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .bar { height: 14px; background: #eee; border-radius: 999px; overflow: hidden; width: 100%; }
-    .fill { height: 100%; width: 0%; background: #333; transition: width .08s linear; }
-    .fill.break { background: #666; }
-    .fill.player { background: #111; }
-    .btns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    button { padding: 12px; border-radius: 12px; border: 1px solid #ccc; background: #fff; font-size: 16px; }
-    button:disabled { opacity: .45; }
-    .tiny { font-size: 12px; opacity: .8; }
+    body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif; margin:0; padding:12px; }
+    .wrap { max-width: 720px; margin: 0 auto; display:grid; gap:10px; }
+    .card { border:1px solid #ddd; border-radius:14px; padding:12px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .btns { display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; margin-top:10px; }
+    button { padding:12px; border-radius:12px; border:1px solid #ccc; background:#fff; font-size:16px; }
+    button:disabled { opacity:.5; }
+    .big { font-size:44px; font-weight:800; line-height:1; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .equip { display: grid; gap: 6px; }
-    .equip-item { border: 1px dashed #ccc; border-radius: 10px; padding: 8px; }
-    .good { font-weight: 700; }
+    .tiny { font-size:12px; opacity:.8; }
+    .bar { height:14px; background:#eee; border-radius:999px; overflow:hidden; }
+    .fill { height:100%; width:0%; background:#333; transition: width .08s linear; }
+    input[type="number"] { width: 110px; padding:10px; border-radius:10px; border:1px solid #ccc; font-size:16px; }
+    textarea { width:100%; min-height:120px; resize:vertical; padding:10px; border-radius:12px; border:1px solid #ccc; font-size:14px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:right; }
+    th:first-child, td:first-child { text-align:left; }
   </style>
 </head>
 <body>
 <div class="wrap">
+
   <div class="card">
     <div class="row">
-      <div class="mono">Time: <span id="time">0.00</span>s</div>
-      <div class="mono">Best: <span id="best">—</span></div>
-      <div class="mono">DPS: <span id="dps">0</span></div>
+      <div>
+        <div class="tiny">現在値</div>
+        <div class="big mono" id="val">0</div>
+      </div>
+      <div style="min-width: 220px;">
+        <div class="row" style="justify-content:flex-start; gap:10px;">
+          <div class="mono">範囲: <span id="minTxt">0</span>〜<span id="maxTxt">30</span></div>
+        </div>
+        <div class="bar" style="margin-top:8px;">
+          <div class="fill" id="bar"></div>
+        </div>
+        <div class="tiny" style="margin-top:6px;">
+          1回ごとに 50%で +1 / 50%で -1（範囲外は丸め）
+        </div>
+      </div>
     </div>
-    <div style="margin-top:8px">
-      <div class="row"><div class="mono">Boss HP</div><div class="mono" id="bossHpTxt"></div></div>
-      <div class="bar"><div class="fill" id="bossHpBar"></div></div>
-    </div>
-    <div style="margin-top:8px">
-      <div class="row"><div class="mono">Break</div><div class="mono" id="breakTxt"></div><div class="tiny" id="breakState"></div></div>
-      <div class="bar"><div class="fill break" id="breakBar"></div></div>
-    </div>
-    <div style="margin-top:8px">
-      <div class="row"><div class="mono">Player HP</div><div class="mono" id="pHpTxt"></div></div>
-      <div class="bar"><div class="fill player" id="pHpBar"></div></div>
-    </div>
-  </div>
 
-  <div class="card">
     <div class="btns">
-      <button id="atkBtn">攻撃</button>
+      <button id="rollBtn">1回回す</button>
+      <button id="roll10Btn">10回回す</button>
+      <button id="roll100Btn">100回回す</button>
       <button id="autoBtn">AUTO: OFF</button>
-      <button id="s1Btn">スキル1</button>
-      <button id="s2Btn">スキル2</button>
     </div>
-    <div class="tiny" style="margin-top:8px">
-      手動の方が速くなる要素：<span class="good">ブレイク中はダメージ倍率UP</span>（スキル合わせが有利）
-    </div>
-  </div>
 
-  <div class="card">
-    <div class="row" style="justify-content: space-between;">
-      <div class="mono">ステータス</div>
+    <div class="row" style="margin-top:10px;">
+      <div class="mono">開始値</div>
+      <input id="startInput" type="number" min="0" max="30" value="0" />
+      <button id="setBtn">設定</button>
       <button id="resetBtn">リセット</button>
     </div>
-    <div class="row mono" id="stats"></div>
-  </div>
-
-  <div class="card">
-    <div class="mono">装備（武器 / 防具 / アクセ）</div>
-    <div class="equip" style="margin-top:8px">
-      <div class="equip-item" id="eqWeapon"></div>
-      <div class="equip-item" id="eqArmor"></div>
-      <div class="equip-item" id="eqAcc"></div>
-    </div>
-    <div class="tiny" style="margin-top:8px">
-      撃破すると装備が1個ドロップ→装備するとタイムが短くなる（個体差：ランダムOP）
+    <div class="tiny">
+      ※下限0は仮ルール。もし下限が違う/マイナスOK/30で止まる等があれば、そこだけすぐ調整できる。
     </div>
   </div>
 
   <div class="card">
     <div class="row">
-      <div class="mono">Last Drop</div>
-      <button id="equipDropBtn" disabled>このドロップを装備</button>
-      <button id="rerollBtn">再戦</button>
+      <div class="mono">統計</div>
+      <div class="mono">回数: <span id="n">0</span> / +1: <span id="plus">0</span> / -1: <span id="minus">0</span></div>
     </div>
-    <div id="drop" class="mono" style="margin-top:8px; white-space: pre-wrap;"></div>
+    <div style="margin-top:10px; overflow:auto;">
+      <table>
+        <thead>
+          <tr><th>値</th><th>回数</th><th>割合</th></tr>
+        </thead>
+        <tbody id="dist"></tbody>
+      </table>
+    </div>
   </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="mono">履歴（最新が上）</div>
+      <button id="clearLogBtn">履歴クリア</button>
+    </div>
+    <textarea id="log" readonly></textarea>
+  </div>
+
 </div>
 
 <script>
 (() => {
-  // ========= Utils =========
-  const $ = (id) => document.getElementById(id);
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const rnd = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const now = () => performance.now();
+  // ---- Config ----
+  const MIN = 0;      // 仮：下限
+  const MAX = 30;     // 上限30
 
-  // ========= Save/Load =========
-  const KEY = "bossrunner_proto_v1";
-  const load = () => {
-    try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; }
-  };
-  const save = (state) => localStorage.setItem(KEY, JSON.stringify(state));
-
-  // ========= Game State =========
-  const base = {
-    atk: 10,
-    spd: 10,     // affects global cooldown a bit
-    crit: 5,     // %
-    skill: 0,    // skill damage %
-    breakDmg: 0  // break damage %
-  };
-
-  const bossBase = {
-    maxHp: 5000,
-    maxBreak: 300
-  };
-
-  const equips = { weapon: null, armor: null, acc: null };
-  let lastDrop = null;
-
-  // Fight
-  let running = false;
+  // ---- State ----
+  let value = 0;
+  let total = 0;
+  let plus = 0;
+  let minus = 0;
   let auto = false;
-  let startAt = 0;
-  let elapsed = 0;
-  let dmgDealt = 0;
+  let autoTimer = null;
 
-  // Boss / Player
-  let bossHp = bossBase.maxHp;
-  let bossBreak = bossBase.maxBreak;
-  let breakDownUntil = 0; // timestamp (ms) when break ends
-  const BREAK_DURATION = 3500; // ms
-  let playerHp = 250;
-  const playerMaxHp = 250;
+  // 分布
+  const dist = new Array(MAX - MIN + 1).fill(0);
 
-  // Cooldowns (ms)
-  const cd = { atk: 0, s1: 0, s2: 0, global: 0 };
-  const cdBase = {
-    atk: 450,
-    s1: 4500,
-    s2: 9000
-  };
+  // ---- DOM ----
+  const $ = (id) => document.getElementById(id);
+  $("minTxt").textContent = MIN;
+  $("maxTxt").textContent = MAX;
 
-  // ========= Equipment / Drop =========
-  const rarities = [
-    { name:"N",  w:60, op:1, mult:1.00 },
-    { name:"R",  w:28, op:2, mult:1.10 },
-    { name:"SR", w:10, op:3, mult:1.25 },
-    { name:"SSR",w:2,  op:3, mult:1.45 },
-  ];
-  const slotDefs = {
-    weapon: { main: () => ({ atk: rnd(6, 12) }) },
-    armor:  { main: () => ({ spd: rnd(4, 9) }) },
-    acc:    { main: () => ({ crit: rnd(2, 6) }) }
-  };
-  const opPool = [
-    { key:"atk",      label:"atk",      min:2,  max:6  },
-    { key:"spd",      label:"spd",      min:2,  max:6  },
-    { key:"crit",     label:"crit%",    min:1,  max:4  },
-    { key:"skill",    label:"skill%",   min:3,  max:10 },
-    { key:"breakDmg", label:"break%",   min:5,  max:15 },
-  ];
+  function clamp(v) { return Math.max(MIN, Math.min(MAX, v)); }
 
-  function rollRarity() {
-    const sum = rarities.reduce((a,r)=>a+r.w,0);
-    let x = Math.random() * sum;
-    for (const r of rarities) { x -= r.w; if (x <= 0) return r; }
-    return rarities[0];
+  function logLine(s) {
+    const area = $("log");
+    area.value = s + "\n" + area.value;
   }
 
-  function makeDrop() {
-    const slot = pick(["weapon","armor","acc"]);
-    const rar = rollRarity();
-    const main = slotDefs[slot].main();
-    const ops = [];
-    const used = new Set(Object.keys(main));
-    while (ops.length < rar.op) {
-      const op = pick(opPool);
-      if (used.has(op.key)) continue;
-      used.add(op.key);
-      ops.push({ key: op.key, val: rnd(op.min, op.max) });
-    }
-    return { slot, rar: rar.name, mult: rar.mult, main, ops };
-  }
-
-  function fmtItem(it) {
-    if (!it) return "（未装備）";
-    const lines = [];
-    lines.push(`${it.slot.toUpperCase()} [${it.rar}] x${it.mult.toFixed(2)}`);
-    for (const [k,v] of Object.entries(it.main)) lines.push(`  +${k}: ${v}`);
-    for (const op of it.ops) lines.push(`  +${op.key}: ${op.val}`);
-    return lines.join("\n");
-  }
-
-  function sumStats() {
-    const s = { ...base };
-    for (const it of Object.values(equips)) {
-      if (!it) continue;
-      const apply = (k, v) => { s[k] = (s[k] || 0) + v; };
-      for (const [k,v] of Object.entries(it.main)) apply(k, v);
-      for (const op of it.ops) apply(op.key, op.val);
-    }
-    // multiplier from rarity: apply to atk only (simple)
-    const w = equips.weapon; if (w) s.atk = Math.round(s.atk * w.mult);
-    return s;
-  }
-
-  // ========= Combat =========
-  function isBroken(t) { return t < breakDownUntil; }
-
-  function getGcd(stats) {
-    // spd: faster a bit (cap)
-    const factor = clamp(1 - (stats.spd - 10) * 0.01, 0.75, 1.2);
-    return 220 * factor;
-  }
-
-  function hit(dmgBase, breakBase, stats, t, isSkill=false) {
-    // crit
-    const crit = Math.random() * 100 < stats.crit;
-    let dmg = dmgBase + stats.atk;
-    if (isSkill) dmg *= (1 + stats.skill / 100);
-
-    if (isBroken(t)) dmg *= 1.75; // break bonus (the "manual advantage" core)
-
-    if (crit) dmg *= 1.5;
-
-    dmg = Math.max(1, Math.floor(dmg));
-    bossHp = Math.max(0, bossHp - dmg);
-    dmgDealt += dmg;
-
-    // break damage
-    let bd = breakBase;
-    bd *= (1 + stats.breakDmg / 100);
-    bd = Math.max(0, Math.floor(bd));
-    if (!isBroken(t)) {
-      bossBreak = Math.max(0, bossBreak - bd);
-      if (bossBreak === 0) {
-        breakDownUntil = t + BREAK_DURATION;
-      }
-    }
-  }
-
-  function actAttack(stats, t) {
-    if (t < cd.atk || t < cd.global) return false;
-    hit(5, 10, stats, t, false);
-    cd.atk = t + cdBase.atk;
-    cd.global = t + getGcd(stats);
-    return true;
-  }
-
-  function actS1(stats, t) {
-    if (t < cd.s1 || t < cd.global) return false;
-    hit(45, 40, stats, t, true);
-    cd.s1 = t + cdBase.s1;
-    cd.global = t + getGcd(stats);
-    return true;
-  }
-
-  function actS2(stats, t) {
-    if (t < cd.s2 || t < cd.global) return false;
-    hit(95, 70, stats, t, true);
-    cd.s2 = t + cdBase.s2;
-    cd.global = t + getGcd(stats);
-    return true;
-  }
-
-  // Auto is intentionally "not optimal"
-  function autoThink(stats, t) {
-    // simple priority: if S2 ready use it, else S1, else attack
-    // (manual advantage = saving skills for break timing yourself)
-    if (actS2(stats, t)) return;
-    if (actS1(stats, t)) return;
-    actAttack(stats, t);
-  }
-
-  // Boss attacks player (simple timer)
-  let bossAtkAt = 0;
-  function bossTick(t) {
-    if (bossHp <= 0) return;
-    if (t < bossAtkAt) return;
-    bossAtkAt = t + 1200;
-    let dmg = isBroken(t) ? 2 : 5; // broken boss hits weaker
-    playerHp = Math.max(0, playerHp - dmg);
-  }
-
-  // ========= UI =========
   function render() {
-    const stats = sumStats();
-    $("stats").textContent =
-      `atk ${stats.atk} / spd ${stats.spd} / crit ${stats.crit}% / skill ${stats.skill}% / break ${stats.breakDmg}%`;
+    $("val").textContent = value;
 
-    // bars
-    $("bossHpTxt").textContent = `${bossHp} / ${bossBase.maxHp}`;
-    $("bossHpBar").style.width = `${(bossHp / bossBase.maxHp) * 100}%`;
+    const pct = ((value - MIN) / (MAX - MIN)) * 100;
+    $("bar").style.width = `${pct}%`;
 
-    const broken = isBroken(now());
-    if (broken) {
-      $("breakTxt").textContent = `BROKEN (${Math.max(0, (breakDownUntil - now())/1000).toFixed(1)}s)`;
-      $("breakState").textContent = "ダメージ倍率UP";
-      $("breakBar").style.width = `0%`;
-    } else {
-      $("breakTxt").textContent = `${bossBreak} / ${bossBase.maxBreak}`;
-      $("breakState").textContent = "";
-      $("breakBar").style.width = `${(bossBreak / bossBase.maxBreak) * 100}%`;
+    $("n").textContent = total;
+    $("plus").textContent = plus;
+    $("minus").textContent = minus;
+
+    // dist table
+    const tbody = $("dist");
+    tbody.innerHTML = "";
+    const denom = total || 1;
+    for (let v = MIN; v <= MAX; v++) {
+      const c = dist[v - MIN];
+      const tr = document.createElement("tr");
+      const p = (c / denom) * 100;
+      tr.innerHTML = `<td class="mono">${v}</td><td class="mono">${c}</td><td class="mono">${p.toFixed(1)}%</td>`;
+      tbody.appendChild(tr);
     }
-
-    $("pHpTxt").textContent = `${playerHp} / ${playerMaxHp}`;
-    $("pHpBar").style.width = `${(playerHp / playerMaxHp) * 100}%`;
-
-    // time
-    $("time").textContent = elapsed.toFixed(2);
-    $("dps").textContent = elapsed > 0 ? Math.floor(dmgDealt / elapsed) : 0;
-
-    // cooldown btn disable
-    const t = now();
-    $("atkBtn").disabled = !running || t < cd.atk || t < cd.global;
-    $("s1Btn").disabled  = !running || t < cd.s1 || t < cd.global;
-    $("s2Btn").disabled  = !running || t < cd.s2 || t < cd.global;
 
     $("autoBtn").textContent = `AUTO: ${auto ? "ON" : "OFF"}`;
-
-    // equip cards
-    $("eqWeapon").textContent = "武器\n" + fmtItem(equips.weapon);
-    $("eqArmor").textContent  = "防具\n" + fmtItem(equips.armor);
-    $("eqAcc").textContent    = "アクセ\n" + fmtItem(equips.acc);
-
-    // drop
-    $("drop").textContent = lastDrop ? fmtItem(lastDrop) : "（まだドロップなし）";
-    $("equipDropBtn").disabled = !lastDrop;
   }
 
-  function setBest(seconds) {
-    const s = load();
-    const best = typeof s.best === "number" ? s.best : null;
-    if (best === null || seconds < best) {
-      s.best = seconds;
-      save(s);
-    }
+  function rollOnce() {
+    // 50/50
+    const up = Math.random() < 0.5;
+    const before = value;
+    value = clamp(value + (up ? 1 : -1));
+
+    total++;
+    if (up) plus++; else minus++;
+    dist[value - MIN]++;
+
+    const sign = up ? "+1" : "-1";
+    const note = (value === before) ? "（端で丸め）" : "";
+    logLine(`${total.toString().padStart(5," ")}: ${before} → ${value}  ${sign} ${note}`.trim());
   }
 
-  function renderBest() {
-    const s = load();
-    $("best").textContent = (typeof s.best === "number") ? (s.best.toFixed(2) + "s") : "—";
+  function rollMany(n) {
+    for (let i = 0; i < n; i++) rollOnce();
+    render();
   }
 
-  // ========= Fight flow =========
-  function startFight() {
-    running = true;
-    auto = false;
-    startAt = now();
-    elapsed = 0;
-    dmgDealt = 0;
-
-    bossHp = bossBase.maxHp;
-    bossBreak = bossBase.maxBreak;
-    breakDownUntil = 0;
-
-    playerHp = playerMaxHp;
-    bossAtkAt = now() + 900;
-
-    const t = now();
-    cd.atk = t + 150;
-    cd.s1 = t + 800;
-    cd.s2 = t + 1600;
-    cd.global = t;
-
-    lastDrop = null;
-    $("equipDropBtn").disabled = true;
-
-    renderBest();
+  function setValue(v) {
+    value = clamp(v);
+    render();
   }
 
-  function endFight(win) {
-  running = false;
-  auto = false;
-  $("autoBtn").textContent = "AUTO: OFF";
-
-  if (win) {
-    lastDrop = makeDrop();
-    $("drop").textContent = "WIN! ドロップ獲得\n\n" + fmtItem(lastDrop);
-    setBest(elapsed);
-    renderBest();
-  } else {
-    $("drop").textContent =
-      "LOSE…\n\n・装備がまだ弱い時はAUTOでOK\n・慣れたらブレイク中にスキルを合わせると速い\n\n→「再戦」を押してね";
+  function resetAll() {
+    value = 0;
+    total = plus = minus = 0;
+    dist.fill(0);
+    $("log").value = "";
+    render();
   }
-}
 
-  // ========= Loop =========
-  function tick() {
-    if (running) {
-      elapsed = (now() - startAt) / 1000;
+  function setStart() {
+    const v = Number($("startInput").value);
+    setValue(v);
+    logLine(`--- 開始値を ${value} に設定 ---`);
+  }
 
-      const stats = sumStats();
-      if (auto) autoThink(stats, now());
-
-      bossTick(now());
-
-      // ブレイクが終わったらゲージを全回復
-      if (!isBroken(now()) && bossBreak === 0) {
-        bossBreak = bossBase.maxBreak;
-      }
-
-      if (bossHp <= 0) endFight(true);
-      if (playerHp <= 0) endFight(false);
+  function toggleAuto() {
+    auto = !auto;
+    if (auto) {
+      autoTimer = setInterval(() => {
+        // AUTOは重すぎない速度で
+        rollMany(1);
+      }, 120);
+    } else {
+      clearInterval(autoTimer);
+      autoTimer = null;
     }
     render();
-    requestAnimationFrame(tick);
   }
 
-  // ========= Events =========
-  $("atkBtn").addEventListener("click", () => actAttack(sumStats(), now()));
-  $("s1Btn").addEventListener("click", () => actS1(sumStats(), now()));
-  $("s2Btn").addEventListener("click", () => actS2(sumStats(), now()));
+  // ---- Events ----
+  $("rollBtn").addEventListener("click", () => rollMany(1));
+  $("roll10Btn").addEventListener("click", () => rollMany(10));
+  $("roll100Btn").addEventListener("click", () => rollMany(100));
+  $("autoBtn").addEventListener("click", toggleAuto);
 
-  $("autoBtn").addEventListener("click", () => {
-    if (!running) return;
-    auto = !auto;
-  });
+  $("setBtn").addEventListener("click", setStart);
+  $("resetBtn").addEventListener("click", resetAll);
+  $("clearLogBtn").addEventListener("click", () => { $("log").value = ""; });
 
-  $("equipDropBtn").addEventListener("click", () => {
-    if (!lastDrop) return;
-    equips[lastDrop.slot] = lastDrop;
-    lastDrop = null;
-  });
-
-  $("rerollBtn").addEventListener("click", () => startFight());
-
-  $("resetBtn").addEventListener("click", () => {
-    localStorage.removeItem(KEY);
-    equips.weapon = equips.armor = equips.acc = null;
-    startFight();
-  });
-
-  // ========= Start =========
-  startFight();
-  tick();
+  // init
+  render();
 })();
 </script>
 </body>
