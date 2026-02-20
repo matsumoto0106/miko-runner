@@ -72,10 +72,10 @@
   <div class="card">
     <div class="row">
       <div class="mono">30到達履歴</div>
-      <div class="mono">回数: <span id="histN">0</span> / 平均: <span id="avg">—</span> / 最小: <span id="min">—</span></div>
+      <div class="mono">回数: <span id="histN">0</span> / 平均(ガチャ): <span id="avg">—</span> / 最小(ガチャ): <span id="min">—</span></div>
     </div>
     <div class="tiny" style="margin-top:6px;">
-      「30に到達した瞬間」の“今回の回数”を保存します（履歴は端末内に保存）
+      「30に到達した瞬間」の“ガチャ回数”を保存します（履歴は端末内に保存）
     </div>
     <textarea id="history" readonly></textarea>
     <div class="row" style="margin-top:8px;">
@@ -91,13 +91,13 @@
   // ---- Config ----
   const MIN = 0;
   const MAX = 30;
-  const KEY = "sen-gi-sim_v2";
+  const KEY = "sen-gi-sim_v3";
 
   // ---- State ----
   let value = 0;
   let startValue = 1;
 
-  let tries = 0;           // 今回、30に到達するまでに回した回数
+  let tries = 0;           // 今回、30に到達するまでに回した回数（ガチャ回数）
   let recoverN = 0;        // 自力復帰した回数（開始値へ戻した回数）
   let zeroAt = null;       // 初めて0に到達した回数（開始値=1のとき等で起こり得る）
 
@@ -105,7 +105,8 @@
   let autoTimer = null;
   let finished = false;    // 30到達済み
 
-  let history = [];        // {tries:number, at:string, start:number, recover:number, zeroAt:number|null}
+  // 保存する履歴：ガチャ回数/復帰回数/開始値 (+表示に使わないが互換のためzeroAt,atも保持)
+  let history = [];        // {tries:number, recover:number, start:number, zeroAt:number|null, at:string}
 
   // ---- DOM ----
   const $ = (id) => document.getElementById(id);
@@ -146,32 +147,16 @@
     autoTimer = null;
   }
 
+  // ★ 履歴表示は「ガチャ回数/復帰回数/開始値」だけにする
   function renderHistory() {
-  $("histN").textContent = history.length;
+    $("histN").textContent = history.length;
 
-  if (history.length === 0) {
-    $("history").value = "（履歴なし）";
-    $("avg").textContent = "—";
-    $("min").textContent = "—";
-    return;
-  }
-
-  const triesArr = history.map(h => h.tries);
-  const sum = triesArr.reduce((a,b)=>a+b,0);
-  const avg = sum / triesArr.length;
-  const min = Math.min(...triesArr);
-
-  $("avg").textContent = avg.toFixed(1);
-  $("min").textContent = String(min);
-
-  // 新しい順で表示（必要な3項目だけ）
-  const lines = [...history].reverse().map((h, idx) => {
-    const no = history.length - idx;
-    return `${String(no).padStart(3," ")}) ガチャ=${h.tries}回  復帰=${h.recover}回  開始値=${h.start}`;
-  });
-
-  $("history").value = lines.join("\n");
-}
+    if (history.length === 0) {
+      $("history").value = "（履歴なし）";
+      $("avg").textContent = "—";
+      $("min").textContent = "—";
+      return;
+    }
 
     const triesArr = history.map(h => h.tries);
     const sum = triesArr.reduce((a,b)=>a+b,0);
@@ -183,9 +168,9 @@
 
     const lines = [...history].reverse().map((h, idx) => {
       const no = history.length - idx;
-      const z = (h.zeroAt == null) ? "-" : h.zeroAt;
-      return `${String(no).padStart(3," ")}) tries=${h.tries}  start=${h.start}  recover=${h.recover}  zeroAt=${z}  at=${h.at}`;
+      return `${String(no).padStart(3," ")}) ガチャ=${h.tries}回  復帰=${h.recover}回  開始値=${h.start}`;
     });
+
     $("history").value = lines.join("\n");
   }
 
@@ -208,7 +193,6 @@
     if (finished) {
       $("hint").textContent = "30到達！履歴に保存済み。再挑戦してね。";
     } else if (value < 1) {
-      // value==0 など。開始値=1なら「0→復帰」するが、開始値=0等もあり得るので一応ガード。
       $("hint").textContent = "殲儀が0のためガチャ不可 →「チャレンジ開始」か「再挑戦」で開始値を1以上にしてね。";
     } else {
       $("hint").textContent = "50%で +1 / 50%で -1（範囲外は丸め）";
@@ -225,10 +209,10 @@
 
     history.push({
       tries,
-      at: fmtTime(),
-      start: startValue,
       recover: recoverN,
-      zeroAt
+      start: startValue,
+      zeroAt,
+      at: fmtTime()
     });
     save();
   }
@@ -248,13 +232,11 @@
 
     // ---- 自力復帰ルール ----
     // 「開始値を1下回った瞬間」に開始値へ戻す（回数カウント）
-    // 例：開始値10 → 9になった瞬間に10へ復帰
     if (value === startValue - 1) {
       value = startValue;
       recoverN++;
     }
 
-    // 30到達チェック
     finishIf30();
   }
 
@@ -280,7 +262,7 @@
 
     // 開始値が30なら「0回で到達」として履歴に残す
     if (finished) {
-      history.push({ tries: 0, at: fmtTime(), start: startValue, recover: 0, zeroAt: null });
+      history.push({ tries: 0, recover: 0, start: startValue, zeroAt: null, at: fmtTime() });
       save();
     }
 
@@ -298,7 +280,7 @@
     stopAuto();
 
     if (finished) {
-      history.push({ tries: 0, at: fmtTime(), start: startValue, recover: 0, zeroAt: null });
+      history.push({ tries: 0, recover: 0, start: startValue, zeroAt: null, at: fmtTime() });
       save();
     }
 
@@ -334,7 +316,7 @@
 
   // ---- Init ----
   load();
-  beginChallenge(); // デフォ開始値で開始
+  beginChallenge();
 })();
 </script>
 </body>
