@@ -3,14 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>2倍 or 0（金庫＆掛け金）</title>
+  <title>2倍 or 0（オールイン + 金庫）</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
-    .field { display: grid; gap: 6px; min-width: 180px; }
-    label { font-size: 12px; color: #444; }
-    input[type="number"] { padding: 10px; border-radius: 10px; border: 1px solid #ccc; }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; cursor: pointer; }
     button:disabled { opacity: .5; cursor: not-allowed; }
     #log { white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
@@ -19,7 +16,7 @@
   </style>
 </head>
 <body>
-  <h1>50%で2倍 / 50%で0（掛け金方式 + 金庫）</h1>
+  <h1>50%で2倍 / 50%で0（オールイン固定）</h1>
 
   <div class="card">
     <div class="stats">
@@ -31,33 +28,18 @@
   </div>
 
   <div class="card">
-    <div class="row">
-      <div class="field">
-        <label for="bet">掛け金（手持ちから）</label>
-        <input id="bet" type="number" min="1" step="1" />
-      </div>
-
-      <button id="play">勝負する</button>
-      <button id="allin">全額ベット</button>
-      <button id="reset">リセット</button>
-    </div>
-
+    <button id="play">手持ち全額で勝負する（オールイン）</button>
+    <button id="reset">リセット</button>
     <p id="result"></p>
   </div>
 
   <div class="card">
     <h2 style="margin-top:0;">金庫（安全に退避）</h2>
     <div class="row">
-      <div class="field">
-        <label for="depositAmt">預ける額（手持ち → 金庫）</label>
-        <input id="depositAmt" type="number" min="1" step="1" />
-      </div>
+      <input id="depositAmt" type="number" min="1" placeholder="預ける額" />
       <button id="deposit">預ける</button>
 
-      <div class="field">
-        <label for="withdrawAmt">引き出す額（金庫 → 手持ち）</label>
-        <input id="withdrawAmt" type="number" min="1" step="1" />
-      </div>
+      <input id="withdrawAmt" type="number" min="1" placeholder="引き出す額" />
       <button id="withdraw">引き出す</button>
 
       <button id="depositAll">手持ち全部を預ける</button>
@@ -71,16 +53,13 @@
   </div>
 
   <script>
-    // ===== 設定 =====
-    const INITIAL_WALLET = 100;  // 初期手持ち
-    const INITIAL_VAULT  = 0;    // 初期金庫
+    const INITIAL_WALLET = 100;
+    const INITIAL_VAULT  = 0;
 
-    // ===== 状態 =====
     let wallet = INITIAL_WALLET;
     let vault  = INITIAL_VAULT;
     let turn = 0, wins = 0, losses = 0;
 
-    // ===== 要素 =====
     const walletEl = document.getElementById("wallet");
     const vaultEl  = document.getElementById("vault");
     const totalEl  = document.getElementById("total");
@@ -88,25 +67,10 @@
     const winsEl   = document.getElementById("wins");
     const lossesEl = document.getElementById("losses");
 
-    const betInput = document.getElementById("bet");
     const resultEl = document.getElementById("result");
     const logEl    = document.getElementById("log");
 
-    const depositAmt = document.getElementById("depositAmt");
-    const withdrawAmt = document.getElementById("withdrawAmt");
-
-    const playBtn = document.getElementById("play");
-
     function fmt(n) { return Number(n).toLocaleString(); }
-
-    function clampBetToWallet() {
-      const b = Math.floor(Number(betInput.value || 0));
-      if (!Number.isFinite(b) || b <= 0) {
-        betInput.value = wallet > 0 ? 1 : 0;
-        return;
-      }
-      if (b > wallet) betInput.value = wallet;
-    }
 
     function addLog(line) {
       logEl.textContent = (line + "\n") + logEl.textContent;
@@ -116,117 +80,81 @@
       walletEl.textContent = fmt(wallet);
       vaultEl.textContent  = fmt(vault);
       totalEl.textContent  = fmt(wallet + vault);
-      turnEl.textContent   = String(turn);
-      winsEl.textContent   = String(wins);
-      lossesEl.textContent = String(losses);
+      turnEl.textContent   = turn;
+      winsEl.textContent   = wins;
+      lossesEl.textContent = losses;
 
-      // 手持ちが0なら勝負できない
-      playBtn.disabled = (wallet <= 0);
-
-      // 掛け金の初期値・上限制御
-      if (wallet <= 0) {
-        betInput.value = 0;
-      } else {
-        if (betInput.value === "" || Number(betInput.value) === 0) betInput.value = Math.min(10, wallet);
-        clampBetToWallet();
-      }
+      document.getElementById("play").disabled = (wallet <= 0);
     }
 
-    // ===== ゲーム：勝負（掛け金だけが 2倍 or 0）=====
-    playBtn.addEventListener("click", () => {
+    // ===== オールイン勝負 =====
+    document.getElementById("play").addEventListener("click", () => {
       if (wallet <= 0) return;
 
-      clampBetToWallet();
-      let bet = Math.floor(Number(betInput.value || 0));
-      if (!Number.isFinite(bet) || bet <= 0) {
-        resultEl.textContent = "掛け金を1以上で設定してね。";
-        return;
-      }
-      if (bet > wallet) bet = wallet;
-
-      turn += 1;
-
-      // 掛け金を一旦手持ちから出す
-      wallet -= bet;
+      turn++;
+      const bet = wallet;   // 手持ち全額
+      wallet = 0;           // 一旦全額出す
 
       const win = Math.random() < 0.5;
+
       if (win) {
-        wins += 1;
-        const payout = bet * 2;
-        wallet += payout; // 勝てば2倍で手持ちへ
-        resultEl.textContent = `#${turn}: ✅ 勝ち！ 掛け金 ${fmt(bet)} → 受取 ${fmt(payout)}`;
-        addLog(`#${turn}: ✅ 勝ち  bet=${fmt(bet)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
+        wins++;
+        wallet = bet * 2;
+        resultEl.textContent = `#${turn}: ✅ 勝ち！ ${fmt(bet)} → ${fmt(wallet)}`;
+        addLog(`#${turn}: ✅ 勝ち  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
       } else {
-        losses += 1;
-        // 負けたら掛け金は0のまま（既に引いてある）
-        resultEl.textContent = `#${turn}: ❌ 負け… 掛け金 ${fmt(bet)} は没収（0）`;
-        addLog(`#${turn}: ❌ 負け  bet=${fmt(bet)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
+        losses++;
+        wallet = 0;
+        resultEl.textContent = `#${turn}: ❌ 負け… ${fmt(bet)} → 0`;
+        addLog(`#${turn}: ❌ 負け  wallet=0  vault=${fmt(vault)}`);
       }
 
-      render();
-    });
-
-    // 全額ベット
-    document.getElementById("allin").addEventListener("click", () => {
-      if (wallet > 0) betInput.value = wallet;
       render();
     });
 
     // ===== 金庫操作 =====
     document.getElementById("deposit").addEventListener("click", () => {
-      const amt = Math.floor(Number(depositAmt.value || 0));
-      if (!Number.isFinite(amt) || amt <= 0) { resultEl.textContent = "預ける額を1以上で入力してね。"; return; }
-      if (amt > wallet) { resultEl.textContent = "手持ちが足りないよ。"; return; }
+      const amt = Math.floor(Number(document.getElementById("depositAmt").value));
+      if (!amt || amt <= 0 || amt > wallet) return;
       wallet -= amt;
       vault  += amt;
-      resultEl.textContent = `🏦 金庫に ${fmt(amt)} 預けた`;
-      addLog(`🏦 預け入れ  amt=${fmt(amt)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
-      depositAmt.value = "";
+      addLog(`🏦 預け入れ ${fmt(amt)}`);
+      document.getElementById("depositAmt").value = "";
       render();
     });
 
     document.getElementById("withdraw").addEventListener("click", () => {
-      const amt = Math.floor(Number(withdrawAmt.value || 0));
-      if (!Number.isFinite(amt) || amt <= 0) { resultEl.textContent = "引き出す額を1以上で入力してね。"; return; }
-      if (amt > vault) { resultEl.textContent = "金庫が足りないよ。"; return; }
+      const amt = Math.floor(Number(document.getElementById("withdrawAmt").value));
+      if (!amt || amt <= 0 || amt > vault) return;
       vault  -= amt;
       wallet += amt;
-      resultEl.textContent = `🏦 金庫から ${fmt(amt)} 引き出した`;
-      addLog(`🏦 引き出し  amt=${fmt(amt)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
-      withdrawAmt.value = "";
+      addLog(`🏦 引き出し ${fmt(amt)}`);
+      document.getElementById("withdrawAmt").value = "";
       render();
     });
 
     document.getElementById("depositAll").addEventListener("click", () => {
-      if (wallet <= 0) { resultEl.textContent = "手持ちが0だよ。"; return; }
-      const amt = wallet;
+      if (wallet <= 0) return;
+      vault += wallet;
       wallet = 0;
-      vault += amt;
-      resultEl.textContent = `🏦 手持ち全部（${fmt(amt)}）を金庫へ`;
-      addLog(`🏦 全額預け  amt=${fmt(amt)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
+      addLog(`🏦 手持ち全額を預けた`);
       render();
     });
 
     document.getElementById("withdrawAll").addEventListener("click", () => {
-      if (vault <= 0) { resultEl.textContent = "金庫が0だよ。"; return; }
-      const amt = vault;
+      if (vault <= 0) return;
+      wallet += vault;
       vault = 0;
-      wallet += amt;
-      resultEl.textContent = `🏦 金庫全部（${fmt(amt)}）を手持ちへ`;
-      addLog(`🏦 全額引出  amt=${fmt(amt)}  wallet=${fmt(wallet)}  vault=${fmt(vault)}`);
+      addLog(`🏦 金庫全額を引き出した`);
       render();
     });
 
-    // リセット
     document.getElementById("reset").addEventListener("click", () => {
       wallet = INITIAL_WALLET;
       vault  = INITIAL_VAULT;
       turn = 0; wins = 0; losses = 0;
       resultEl.textContent = "";
       logEl.textContent = "";
-      betInput.value = "";
-      depositAmt.value = "";
-      withdrawAmt.value = "";
       render();
     });
 
