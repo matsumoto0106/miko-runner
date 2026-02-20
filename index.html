@@ -78,8 +78,8 @@
       <div class="mono">
         回数: <span id="histN">0</span>
         / 平均(ガチャ): <span id="avg">—</span>
-        / 最小(ガチャ): <span id="min">—</span>
-        / 最大(ガチャ): <span id="maxTry">—</span>
+        / 最小(ガチャ): <span id="min">—</span>（<span id="minAt">—</span>回目）
+        / 最大(ガチャ): <span id="maxTry">—</span>（<span id="maxAt">—</span>回目）
       </div>
     </div>
     <textarea id="history" readonly></textarea>
@@ -149,7 +149,7 @@
   // ---- Config ----
   const MIN = 0;
   const MAX = 30;
-  const KEY = "sen-gi-sim_v5";
+  const KEY = "sen-gi-sim_v6";
 
   // ---- State ----
   let value = 0;
@@ -250,21 +250,38 @@
       $("avg").textContent = "—";
       $("min").textContent = "—";
       $("maxTry").textContent = "—";
+      $("minAt").textContent = "—";
+      $("maxAt").textContent = "—";
       return;
     }
 
     const triesArr = history.map(h => h.tries);
     const sum = triesArr.reduce((a,b)=>a+b,0);
     const avg = sum / triesArr.length;
-    const min = Math.min(...triesArr);
-    const maxTry = Math.max(...triesArr);
+
+    // min / max 値
+    const minVal = Math.min(...triesArr);
+    const maxVal = Math.max(...triesArr);
+
+    // 「何回目」= 履歴の登録順（古い→新しい）での1-based
+    // 同じ値が複数ある場合は最初に出た回（最古の回）を採用
+    let minAt = 1;
+    let maxAt = 1;
+    for (let i = 0; i < history.length; i++) {
+      if (history[i].tries === minVal) { minAt = i + 1; break; }
+    }
+    for (let i = 0; i < history.length; i++) {
+      if (history[i].tries === maxVal) { maxAt = i + 1; break; }
+    }
 
     $("avg").textContent = avg.toFixed(1);
-    $("min").textContent = String(min);
-    $("maxTry").textContent = String(maxTry);
+    $("min").textContent = String(minVal);
+    $("maxTry").textContent = String(maxVal);
+    $("minAt").textContent = String(minAt);
+    $("maxAt").textContent = String(maxAt);
 
     const lines = [...history].reverse().map((h, idx) => {
-      const no = history.length - idx;
+      const no = history.length - idx; // 1が最古、Nが最新
       return `${String(no).padStart(3," ")}) ガチャ=${h.tries}回  復帰=${h.recover}回  開始値=${h.start}`;
     });
 
@@ -280,7 +297,7 @@
     const pct = ((value - MIN) / (MAX - MIN)) * 100;
     $("bar").style.width = `${pct}%`;
 
-    const disable = fastRunning; // 高速中は手動操作を止める
+    const disable = fastRunning;
     $("rollBtn").disabled = disable || !canRoll();
     $("roll10Btn").disabled = disable || !canRoll();
     $("roll100Btn").disabled = disable || !canRoll();
@@ -423,7 +440,6 @@
   function fastStart() {
     if (fastRunning) return;
 
-    // 高速中は通常AUTO停止
     stopAuto();
 
     fastTarget = Math.max(1, Number($("targetRuns").value) || 1);
@@ -437,7 +453,6 @@
     fastStartAt = performance.now();
     fastLastUiAt = 0;
 
-    // まず1チャレンジ開始（今の開始値で）
     retry();
 
     requestAnimationFrame(fastTick);
@@ -457,23 +472,16 @@
     const batchLimit = Math.max(100, Number($("batchLimit").value) || 20000);
     const uiInterval = Math.max(50, Number($("uiInterval").value) || 120);
 
-    // 1フレームでまとめて回す（時間を食いすぎないよう上限付き）
-    // 途中で30到達したら次チャレンジへ（fastDone加算）
     let steps = 0;
     while (steps < batchLimit && fastDone < fastTarget) {
       if (finished) {
-        // 直前のチャレンジが30到達した
         fastDone++;
         if (fastDone >= fastTarget) break;
-
-        // 次チャレンジへ
         retry();
-        // retryで finished が startValue==30 のケースで true になる可能性があるので、その場合も即カウントされる
         continue;
       }
 
       if (!canRoll()) {
-        // value<1 の状況（開始値が0など）だと進まないので安全停止
         fastStop();
         $("fastNote").textContent = "開始値が1未満のため進行不能です。開始値を1以上にして再開してください。";
         return;
@@ -483,7 +491,6 @@
       steps++;
     }
 
-    // UI更新は間引く
     if (ts - fastLastUiAt >= uiInterval || fastDone >= fastTarget) {
       fastLastUiAt = ts;
       renderAll();
@@ -500,11 +507,6 @@
   }
 
   // ---- Share actions ----
-  function setShareMsg(s) {
-    $("shareMsg").textContent = s;
-    if (s) setTimeout(() => { if ($("shareMsg").textContent === s) $("shareMsg").textContent = ""; }, 2500);
-  }
-
   async function doCopy(text) {
     try {
       await navigator.clipboard.writeText(text);
